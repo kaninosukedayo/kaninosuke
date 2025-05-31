@@ -1,12 +1,10 @@
+
 import streamlit as st
 import json
 import os
 
-# ユーザーデータの保存ファイル
 USER_FILE = "users.json"
-STOCK_PRICE = 120  # 株価（管理者が決めた値）
 
-# 初期データ作成
 def load_users():
     if not os.path.exists(USER_FILE):
         with open(USER_FILE, "w") as f:
@@ -20,7 +18,6 @@ def save_users(users):
 
 users = load_users()
 
-# ログイン機能
 def login():
     st.title("投資ゲームログイン")
     username = st.text_input("ユーザー名")
@@ -42,19 +39,22 @@ def login():
                 "password": password,
                 "ebi": 5000,
                 "stock": 0,
+                "price": 120,
                 "comment": "",
-                "banned": False
+                "banned": False,
+                "cities": 0,
+                "military": 0,
+                "kd": 0.0,
+                "expect": 0
             }
             save_users(users)
             st.success("登録完了！ログインしてください")
 
-# ホーム画面
 def home():
     st.title("🦐 投資ゲーム ホーム")
     username = st.session_state["username"]
     user = users[username]
 
-    # BAN確認
     if user.get("banned"):
         st.error("あなたのアカウントは凍結されています。")
         return
@@ -62,35 +62,42 @@ def home():
     st.write(f"### ようこそ、{username}さん")
     st.metric("🦐 エビ", user["ebi"])
     st.metric("📈 保有株数", user["stock"])
-    st.metric("💹 株価", STOCK_PRICE)
+    st.metric("💹 株価", user.get("price", 120))
 
-    # 株の売買
-    st.subheader("株の売買")
-    action = st.radio("売買選択", ["購入", "売却"])
-    amount = st.number_input("株数", min_value=1, step=1)
-
-    if st.button("実行"):
-        if action == "購入":
-            total = STOCK_PRICE * amount
-            if user["ebi"] >= total:
-                user["ebi"] -= total
-                user["stock"] += amount
-                st.success(f"{amount}株 購入しました！")
-            else:
-                st.error("エビが足りません")
+    # 株数調整（ユーザー自身で）
+    st.subheader("🛠 保有株数の調整")
+    adjust_amount = st.number_input("増減させる株数（マイナスも可）", step=1, value=0, key="adjust_input")
+    if st.button("株数を調整"):
+        new_stock = user["stock"] + adjust_amount
+        if new_stock < 0:
+            st.error("株数を0未満にすることはできません")
         else:
-            if user["stock"] >= amount:
-                user["stock"] -= amount
-                user["ebi"] += STOCK_PRICE * amount
-                st.success(f"{amount}株 売却しました！")
-            else:
-                st.error("株が足りません")
+            user["stock"] = new_stock
+            save_users(users)
+            st.success(f"株数を {new_stock} に更新しました")
+            st.experimental_rerun()
 
-        save_users(users)
-        st.experimental_rerun()
+    # 他プレイヤーの株を購入
+    st.subheader("💸 他プレイヤーの株を購入")
+    target = st.selectbox("購入対象ユーザー", [u for u in users if u != username and not users[u].get("banned")])
+    buy_amount = st.number_input("購入株数", min_value=1, step=1, key="buy_stock")
+    target_price = users[target]["price"]
+
+    if st.button("購入実行"):
+        total_price = target_price * buy_amount
+        if user["ebi"] >= total_price and users[target]["stock"] >= buy_amount:
+            user["ebi"] -= total_price
+            users[target]["ebi"] += total_price
+            user["stock"] += buy_amount
+            users[target]["stock"] -= buy_amount
+            save_users(users)
+            st.success(f"{target} の株を {buy_amount} 株購入しました！")
+            st.experimental_rerun()
+        else:
+            st.error("エビが足りないか、相手の株が不足しています")
 
     # コメント編集
-    st.subheader("説明コメントの更新")
+    st.subheader("📝 説明コメントの更新")
     comment = st.text_area("説明", value=user["comment"])
     if st.button("説明を更新"):
         user["comment"] = comment
@@ -98,36 +105,58 @@ def home():
         st.success("説明を更新しました")
 
     # エビ送金
-    st.subheader("他のプレイヤーにエビを送る")
+    st.subheader("📤 他のプレイヤーにエビを送る")
     to_user = st.selectbox("送信先", [u for u in users if u != username])
-    ebi_amount = st.number_input("送るエビ数", min_value=1, step=1)
+    ebi_amount = st.number_input("送るエビ数", min_value=1, step=1, key="ebi_send")
     if st.button("送信"):
         if user["ebi"] >= ebi_amount:
             user["ebi"] -= ebi_amount
             users[to_user]["ebi"] += ebi_amount
             save_users(users)
-            st.success(f"{to_user} に {ebi_amount}エビを送信しました！")
+            st.success(f"{to_user} に {ebi_amount} エビを送信しました！")
+            st.experimental_rerun()
         else:
             st.error("エビが足りません")
 
-    # ユーザー一覧
-    st.subheader("プレイヤー一覧")
+    # プレイヤー一覧
+    st.subheader("👥 プレイヤー一覧")
     for name, data in users.items():
         if not data.get("banned"):
-            st.write(f"🧑‍💼 **{name}** ｜🦐 {data['ebi']} ｜📈 {data['stock']}株")
+            st.write(f"🧑‍💼 **{name}** ｜🦐 {data['ebi']} ｜📈 {data['stock']}株 ｜ 💹 株価: {data.get('price', 120)}")
             st.caption(data.get("comment", ""))
 
-    # 管理者機能（"admin"ユーザー限定）
+    # 管理者パネル
     if username == "admin":
         st.subheader("👮 管理者パネル")
+
+        # BAN機能
         ban_user = st.selectbox("BANするユーザー", [u for u in users if u != "admin"])
         if st.button("BAN実行"):
             users[ban_user]["banned"] = True
             save_users(users)
             st.success(f"{ban_user} をBANしました")
 
-# アプリ本体
+        # 株価自動設定
+        st.subheader("📊 株価設定ツール")
+        target = st.selectbox("株価を設定するユーザー", [u for u in users if u != "admin"], key="set_price_user")
+        cities = st.number_input("都市数", min_value=0, key="cities")
+        military = st.number_input("軍の数", min_value=0.0, key="military")
+        kd = st.number_input("キルレ", min_value=0.0, key="kd")
+        expect = st.number_input("期待値", min_value=0.0, key="expect")
+
+        if st.button("株価自動更新"):
+            price = 100 + cities * 2 + military * 0.5 + kd * 10 + expect * 1
+            users[target]["price"] = round(price)
+            users[target]["cities"] = cities
+            users[target]["military"] = military
+            users[target]["kd"] = kd
+            users[target]["expect"] = expect
+            save_users(users)
+            st.success(f"{target} の株価を {round(price)} に設定しました")
+
+# アプリ起動
 if "username" not in st.session_state:
     login()
 else:
     home()
+
