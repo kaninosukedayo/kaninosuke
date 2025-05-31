@@ -2,10 +2,13 @@ import streamlit as st
 import json
 import os
 
+# ユーザーデータの保存ファイル
 USER_FILE = "users.json"
+
+# 初期株価
 DEFAULT_STOCK_PRICE = 120
 
-# ユーザーデータの読み書き
+# ユーザーデータの読み込み・保存
 def load_users():
     if not os.path.exists(USER_FILE):
         with open(USER_FILE, "w") as f:
@@ -43,8 +46,7 @@ def login():
                 "stock": 0,
                 "comment": "",
                 "banned": False,
-                "stock_price": DEFAULT_STOCK_PRICE,
-                "sell_orders": []
+                "stock_price": DEFAULT_STOCK_PRICE
             }
             save_users(users)
             st.success("登録完了！ログインしてください")
@@ -64,62 +66,33 @@ def home():
     st.metric("📈 保有株数", user["stock"])
     st.metric("💹 あなたの株価", user["stock_price"])
 
-    # 株売却注文登録
-    st.subheader("💼 売り注文の登録")
-    sell_amount = st.number_input("売りに出す株数", min_value=1, max_value=user["stock"], step=1)
-    if st.button("売りに出す"):
-        user["stock"] -= sell_amount
-        user["sell_orders"].append({"amount": sell_amount})
-        save_users(users)
-        st.success(f"{sell_amount} 株を売りに出しました")
+    # 株の売買
+    st.subheader("株の売買")
+    target_user = st.selectbox("購入対象プレイヤー", [u for u in users if u != username and not users[u]["banned"]])
+    target_stock_price = users[target_user]["stock_price"]
+    st.write(f"{target_user} の株価: {target_stock_price} エビ")
+    trade_action = st.radio("売買選択", ["購入", "売却"])
+    trade_amount = st.number_input("株数", min_value=1, step=1)
 
-    # 自分の売り注文リスト
-    if user["sell_orders"]:
-        st.write("🧾 現在の売り注文:")
-        for i, order in enumerate(user["sell_orders"]):
-            st.write(f"{i+1}. {order['amount']} 株 @ {user['stock_price']} エビ")
-            if st.button(f"取消 {i+1}", key=f"cancel_{i}"):
-                user["stock"] += order["amount"]
-                user["sell_orders"].pop(i)
+    if st.button("売買実行"):
+        if trade_action == "購入":
+            total = target_stock_price * trade_amount
+            if user["ebi"] >= total:
+                user["ebi"] -= total
+                user["stock"] += trade_amount
+                users[target_user]["ebi"] += total
                 save_users(users)
-                st.success("注文をキャンセルしました")
-                st.experimental_rerun()
-
-    # 株の購入
-    st.subheader("📥 株の購入")
-    market_orders = []
-    for seller, data in users.items():
-        if seller != username and not data.get("banned"):
-            for order in data.get("sell_orders", []):
-                market_orders.append({
-                    "seller": seller,
-                    "amount": order["amount"],
-                    "price": data["stock_price"]
-                })
-
-    if not market_orders:
-        st.write("現在、売り注文はありません")
-    else:
-        for i, order in enumerate(market_orders):
-            st.write(f"{i+1}. {order['seller']} の {order['amount']} 株 @ {order['price']} エビ")
-            buy_amount = st.number_input(f"{order['seller']} から購入株数", min_value=1, max_value=order["amount"], key=f"buy_{i}")
-            if st.button(f"購入する {i+1}", key=f"buy_btn_{i}"):
-                total = order["price"] * buy_amount
-                if user["ebi"] >= total:
-                    user["ebi"] -= total
-                    user["stock"] += buy_amount
-                    users[order["seller"]]["ebi"] += total
-                    # 売り注文を減らす
-                    for o in users[order["seller"]]["sell_orders"]:
-                        if o["amount"] >= buy_amount:
-                            o["amount"] -= buy_amount
-                            break
-                    users[order["seller"]]["sell_orders"] = [o for o in users[order["seller"]]["sell_orders"] if o["amount"] > 0]
-                    save_users(users)
-                    st.success(f"{order['seller']} から {buy_amount} 株を購入しました！")
-                    st.experimental_rerun()
-                else:
-                    st.error("エビが足りません")
+                st.success(f"{target_user} の株を {trade_amount} 株購入しました！")
+            else:
+                st.error("エビが足りません")
+        else:
+            if user["stock"] >= trade_amount:
+                user["stock"] -= trade_amount
+                user["ebi"] += user["stock_price"] * trade_amount
+                save_users(users)
+                st.success(f"{trade_amount} 株 売却しました！")
+            else:
+                st.error("株が足りません")
 
     # コメント編集
     st.subheader("説明コメントの更新")
@@ -129,7 +102,7 @@ def home():
         save_users(users)
         st.success("説明を更新しました")
 
-    # エビ送信
+    # エビ送信機能
     st.subheader("他のプレイヤーにエビを送る")
     to_user = st.selectbox("送信先", [u for u in users if u != username and not users[u]["banned"]], key="send_user")
     ebi_amount = st.number_input("送るエビ数", min_value=1, step=1, key="send_amount")
@@ -153,6 +126,7 @@ def home():
     if username == "admin":
         st.subheader("👮 管理者パネル")
 
+        # BAN機能
         ban_user = st.selectbox("BANするユーザー", [u for u in users if u != "admin"])
         if st.button("BAN実行"):
             users[ban_user]["banned"] = True
@@ -161,6 +135,7 @@ def home():
 
         st.markdown("---")
 
+        # エビ量調整
         st.subheader("🦐 エビ量の調整")
         target_user = st.selectbox("対象ユーザー", [u for u in users if u != "admin"], key="ebi_target")
         ebi_change = st.number_input("増減させるエビ量（マイナスも可）", value=0, step=100, key="ebi_change")
@@ -171,6 +146,7 @@ def home():
             save_users(users)
             st.success(f"{target_user} のエビを {'増加' if ebi_change >= 0 else '減少'} させました")
 
+        # 株価自動計算
         st.subheader("💹 株価自動計算")
         calc_user = st.selectbox("株価を計算するユーザー", [u for u in users if u != "admin"], key="stock_calc_user")
         base = 100
@@ -185,11 +161,12 @@ def home():
             save_users(users)
             st.success(f"{calc_user} の株価を {price} に設定しました")
 
-# アプリ実行
+# アプリ起動
 if "username" not in st.session_state:
     login()
 else:
     home()
+
 
 
 
