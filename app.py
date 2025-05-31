@@ -136,38 +136,33 @@ if st.session_state.get("rerun"):
             st.write(f"🧑‍💼 **{name}** ｜🦐 {data['ebi']} ｜📈 {data['stock']}株 ｜ 💹 株価: {data.get('price', 120)}")
             st.caption(data.get("comment", ""))
 
-if username == "admin":
-    st.subheader("👮 管理者パネル")
+    if username == "admin":
+        st.subheader("👮 管理者パネル")
 
-    # ユーザーBAN
-    ban_user = st.selectbox("BANするユーザー", [u for u in users if u != "admin"])
-    if st.button("BAN実行"):
-        users[ban_user]["banned"] = True
-        save_users(users)
-        st.success(f"{ban_user} をBANしました")
+        # BAN機能
+        ban_user = st.selectbox("BANするユーザー", [u for u in users if u != "admin"])
+        if st.button("BAN実行"):
+            users[ban_user]["banned"] = True
+            save_users(users)
+            st.success(f"{ban_user} をBANしました")
 
-    st.markdown("---")
+        st.markdown("---")
 
-    # 🔧 エビの増減機能
-    st.subheader("🦐 エビ量の調整")
-    target_user = st.selectbox("対象ユーザー", [u for u in users if u != "admin"], key="ebi_target")
-    ebi_change = st.number_input("増減させるエビ量（マイナスもOK）", value=0, step=100, key="ebi_change_input")
-    
-    if st.button("エビを調整する"):
-        users[target_user]["ebi"] += ebi_change
-        if users[target_user]["ebi"] < 0:
-            users[target_user]["ebi"] = 0  # マイナスにはしない
-        save_users(users)
-        sign = "増加" if ebi_change >= 0 else "減少"
-        st.success(f"{target_user} のエビを {abs(ebi_change)} 減らしました" if ebi_change < 0 else f"{target_user} に {ebi_change} エビを追加しました")
+        # 🔧 エビの増減機能
+        st.subheader("🦐 エビ量の調整")
+        target_user = st.selectbox("対象ユーザー", [u for u in users if u != "admin"], key="ebi_target")
+        ebi_change = st.number_input("増減させるエビ量（マイナスもOK）", value=0, step=100, key="ebi_change_input")
 
-
- # マイナス防止
+        if st.button("エビを調整する"):
+            users[target_user]["ebi"] += ebi_change
+            if users[target_user]["ebi"] < 0:
+                users[target_user]["ebi"] = 0
             save_users(users)
             if ebi_change >= 0:
                 st.success(f"{target_user} に {ebi_change} エビを追加しました")
             else:
                 st.success(f"{target_user} のエビを {abs(ebi_change)} 減らしました")
+
         # 株価自動設定
         st.subheader("📊 株価設定ツール")
         target = st.selectbox("株価を設定するユーザー", [u for u in users if u != "admin"], key="set_price_user")
