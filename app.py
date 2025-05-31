@@ -104,19 +104,30 @@ def home():
         save_users(users)
         st.success("説明を更新しました")
 
-    # エビ送金
-    st.subheader("📤 他のプレイヤーにエビを送る")
-    to_user = st.selectbox("送信先", [u for u in users if u != username])
-    ebi_amount = st.number_input("送るエビ数", min_value=1, step=1, key="ebi_send")
-    if st.button("送信"):
-        if user["ebi"] >= ebi_amount:
-            user["ebi"] -= ebi_amount
-            users[to_user]["ebi"] += ebi_amount
-            save_users(users)
-            st.success(f"{to_user} に {ebi_amount} エビを送信しました！")
-            st.experimental_rerun()
-        else:
-            st.error("エビが足りません")
+    
+# エビ送金
+st.subheader("📤 他のプレイヤーにエビを送る")
+to_user = st.selectbox("送信先", [u for u in users if u != username])
+ebi_amount = st.number_input("送るエビ数", min_value=1, step=1, key="ebi_send")
+
+if st.button("送信"):
+    if user["ebi"] >= ebi_amount:
+        user["ebi"] -= ebi_amount
+        users[to_user]["ebi"] += ebi_amount
+        save_users(users)
+        st.session_state["message"] = f"{to_user} に {ebi_amount} エビを送信しました！"
+        st.session_state["rerun"] = True
+    else:
+        st.error("エビが足りません")
+
+# メッセージがあれば表示
+if "message" in st.session_state:
+    st.success(st.session_state.pop("message"))
+
+# rerun 実行
+if st.session_state.get("rerun"):
+    st.session_state["rerun"] = False
+    st.experimental_rerun()
 
     # プレイヤー一覧
     st.subheader("👥 プレイヤー一覧")
