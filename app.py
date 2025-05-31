@@ -146,7 +146,7 @@ if st.session_state.get("rerun"):
             users[ban_user]["banned"] = True
             save_users(users)
             st.success(f"{ban_user} をBANしました")
- 　　　　# 🔧 エビの増減機能
+ 　　　　# エビの増減機能
         st.subheader("🦐 エビ量の調整")
         target_user = st.selectbox("対象ユーザー", [u for u in users if u != "admin"], key="ebi_target")
         ebi_change = st.number_input("増減させるエビ量（マイナスもOK）", value=0, step=100, key="ebi_change_input")
