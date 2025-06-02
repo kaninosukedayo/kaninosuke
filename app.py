@@ -38,8 +38,8 @@ def login():
             users[username] = {
                 "password": password,
                 "ebi": 5000,
-                "stock": 0,  # 所有している株（購入によって増える）
-                "listed_stock": 0,  # 市場に出している株
+                "stock": 0,
+                "listed_stock": 0,
                 "comment": "",
                 "banned": False,
                 "stock_price": DEFAULT_STOCK_PRICE
@@ -62,7 +62,6 @@ def home():
     st.metric("💹 あなたの株価", user["stock_price"])
     st.metric("🧺 売りに出している株数", user.get("listed_stock", 0))
 
-    # 売り出し株数の調整
     st.subheader("🛒 売りに出す株数の設定")
     new_listed = st.number_input("売りに出す株数（市場に出す量）", min_value=0, step=1, value=user.get("listed_stock", 0))
     if st.button("売り出し株数を更新"):
@@ -70,7 +69,6 @@ def home():
         save_users(users)
         st.success(f"{new_listed} 株を市場に出しました")
 
-    # 株の売買
     st.subheader("株の売買")
     available_targets = [u for u in users if u != username and not users[u]["banned"] and users[u].get("listed_stock", 0) > 0]
     if available_targets:
@@ -95,7 +93,18 @@ def home():
     else:
         st.info("現在、購入可能な株がありません。")
 
-    # コメント編集
+    st.subheader("📤 保有株を売却（エビに戻す）")
+    if user["stock"] > 0:
+        sell_amount = st.number_input("売却する株数", min_value=1, max_value=user["stock"], step=1, key="sell_stock")
+        if st.button("株を売却"):
+            gained_ebi = sell_amount * user["stock_price"]
+            user["stock"] -= sell_amount
+            user["ebi"] += gained_ebi
+            save_users(users)
+            st.success(f"{sell_amount} 株を売却し、{gained_ebi} エビを獲得しました！")
+    else:
+        st.info("保有株がありません")
+
     st.subheader("説明コメントの更新")
     comment = st.text_area("説明", value=user["comment"])
     if st.button("説明を更新"):
@@ -103,7 +112,6 @@ def home():
         save_users(users)
         st.success("説明を更新しました")
 
-    # エビ送信機能
     st.subheader("他のプレイヤーにエビを送る")
     to_user = st.selectbox("送信先", [u for u in users if u != username and not users[u]["banned"]], key="send_user")
     ebi_amount = st.number_input("送るエビ数", min_value=1, step=1, key="send_amount")
@@ -116,27 +124,21 @@ def home():
         else:
             st.error("エビが足りません")
 
-    # プレイヤー一覧
     st.subheader("プレイヤー一覧")
     for name, data in users.items():
         if not data.get("banned"):
             st.write(f"🧑‍💼 **{name}** ｜🦐 {data['ebi']} ｜📈 {data['stock']} 株 ｜💹 株価: {data['stock_price']} ｜🧺 出品株数: {data.get('listed_stock', 0)}")
             st.caption(data.get("comment", ""))
 
-    # 管理者パネル
     if username == "admin":
         st.subheader("👮 管理者パネル")
 
-        # BAN機能
         ban_user = st.selectbox("BANするユーザー", [u for u in users if u != "admin"])
         if st.button("BAN実行"):
             users[ban_user]["banned"] = True
             save_users(users)
             st.success(f"{ban_user} をBANしました")
 
-        st.markdown("---")
-
-        # エビ量調整
         st.subheader("🦐 エビ量の調整")
         target_user = st.selectbox("対象ユーザー", [u for u in users if u != "admin"], key="ebi_target")
         ebi_change = st.number_input("増減させるエビ量（マイナスも可）", value=0, step=100, key="ebi_change")
@@ -147,7 +149,6 @@ def home():
             save_users(users)
             st.success(f"{target_user} のエビを {'増加' if ebi_change >= 0 else '減少'} させました")
 
-        # 株価自動計算
         st.subheader("💹 株価自動計算")
         calc_user = st.selectbox("株価を計算するユーザー", [u for u in users if u != "admin"], key="stock_calc_user")
         base = 100
