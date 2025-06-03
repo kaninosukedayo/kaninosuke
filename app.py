@@ -42,7 +42,8 @@ def login():
                 "listed_stock": 0,
                 "comment": "",
                 "banned": False,
-                "stock_price": DEFAULT_STOCK_PRICE
+                "stock_price": DEFAULT_STOCK_PRICE,
+                "stock_detail": {}
             }
             save_users(users)
             st.success("登録完了！ログインしてください")
@@ -86,6 +87,11 @@ def home():
                 user["stock"] += buy_amount
                 target_data["ebi"] += total_cost
                 target_data["listed_stock"] -= buy_amount
+
+                # 株の所有者を記録
+                user.setdefault("stock_detail", {})
+                user["stock_detail"][target_user] = user["stock_detail"].get(target_user, 0) + buy_amount
+
                 save_users(users)
                 st.success(f"{target_user} の株を {buy_amount} 株購入しました！")
             else:
@@ -104,6 +110,33 @@ def home():
             st.success(f"{sell_amount} 株を売却し、{gained_ebi} エビを獲得しました！")
     else:
         st.info("保有株がありません")
+
+    st.subheader("♻️ 株を元の発行者に売り返す")
+    if user.get("stock_detail"):
+        sell_back_target = st.selectbox("誰に売り返しますか？", list(user["stock_detail"].keys()))
+        max_sellable = user["stock_detail"][sell_back_target]
+        sell_back_amount = st.number_input("売り返す株数", min_value=1, max_value=max_sellable, step=1, key="sell_back_amount")
+
+        if st.button("売り返す"):
+            issuer = users[sell_back_target]
+            sell_price = issuer["stock_price"]
+            total_return = sell_back_amount * sell_price
+
+            user["stock"] -= sell_back_amount
+            user["stock_detail"][sell_back_target] -= sell_back_amount
+            if user["stock_detail"][sell_back_target] == 0:
+                del user["stock_detail"][sell_back_target]
+
+            user["ebi"] += total_return
+            issuer["stock"] += sell_back_amount
+            issuer["ebi"] -= total_return
+            if issuer["ebi"] < 0:
+                issuer["ebi"] = 0
+
+            save_users(users)
+            st.success(f"{sell_back_target} に {sell_back_amount} 株を売り返し、{total_return} エビを獲得しました！")
+    else:
+        st.info("売り返せる株がありません。")
 
     st.subheader("説明コメントの更新")
     comment = st.text_area("説明", value=user["comment"])
@@ -167,8 +200,6 @@ if "username" not in st.session_state:
     login()
 else:
     home()
-
-
 
 
 
