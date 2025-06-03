@@ -3,6 +3,7 @@ import json
 import os
 
 USER_FILE = "users.json"
+REQUEST_FILE = "sellback_requests.json"
 DEFAULT_STOCK_PRICE = 120
 
 def load_users():
@@ -16,7 +17,19 @@ def save_users(users):
     with open(USER_FILE, "w") as f:
         json.dump(users, f)
 
+def load_requests():
+    if not os.path.exists(REQUEST_FILE):
+        with open(REQUEST_FILE, "w") as f:
+            json.dump([], f)
+    with open(REQUEST_FILE, "r") as f:
+        return json.load(f)
+
+def save_requests(requests):
+    with open(REQUEST_FILE, "w") as f:
+        json.dump(requests, f)
+
 users = load_users()
+requests = load_requests()
 
 def login():
     st.title("投資ゲーム ログイン")
@@ -43,7 +56,7 @@ def login():
                 "comment": "",
                 "banned": False,
                 "stock_price": DEFAULT_STOCK_PRICE,
-                "purchased_stocks": {}
+                "owned_from": {}  # key: seller, value: number of stocks bought from them
             }
             save_users(users)
             st.success("登録完了！ログインしてください")
@@ -57,9 +70,6 @@ def home():
         st.error("あなたのアカウントは凍結されています。")
         return
 
-    if "purchased_stocks" not in user:
-        user["purchased_stocks"] = {}
-
     st.write(f"### ようこそ、{username}さん")
     st.metric("🦐 エビ", user["ebi"])
     st.metric("📈 保有株数", user["stock"])
@@ -67,7 +77,7 @@ def home():
     st.metric("🧺 売りに出している株数", user.get("listed_stock", 0))
 
     st.subheader("🛒 売りに出す株数の設定")
-    new_listed = st.number_input("売りに出す株数（市場に出す量）", min_value=0, max_value=user["stock"], step=1, value=user.get("listed_stock", 0))
+    new_listed = st.number_input("売りに出す株数", min_value=0, step=1, value=user.get("listed_stock", 0))
     if st.button("売り出し株数を更新"):
         user["listed_stock"] = new_listed
         save_users(users)
@@ -88,7 +98,7 @@ def home():
             if user["ebi"] >= total_cost:
                 user["ebi"] -= total_cost
                 user["stock"] += buy_amount
-                user["purchased_stocks"][target_user] = user["purchased_stocks"].get(target_user, 0) + buy_amount
+                user["owned_from"][target_user] = user["owned_from"].get(target_user, 0) + buy_amount
                 target_data["ebi"] += total_cost
                 target_data["listed_stock"] -= buy_amount
                 save_users(users)
@@ -98,36 +108,46 @@ def home():
     else:
         st.info("現在、購入可能な株がありません。")
 
-    st.subheader("♻️ 株を元の発行者に売り返す")
-    if user["purchased_stocks"]:
-        for issuer, amount in user["purchased_stocks"].items():
-            if amount <= 0:
-                continue
-            issuer_price = users[issuer]["stock_price"]
-            st.write(f"{issuer} に売り返せる株: {amount} 株 ｜現在株価: {issuer_price}")
-            sell_back = st.number_input(f"{issuer} に売る株数", min_value=0, max_value=amount, step=1, key=f"sellback_{issuer}")
-            if st.button(f"{issuer} に売却する", key=f"btn_sellback_{issuer}"):
-                user["stock"] -= sell_back
-                user["ebi"] += sell_back * issuer_price
-                users[issuer]["stock"] -= 0  # 発行者の保有株数は増やさない（必要なら調整）
-                users[issuer]["ebi"] -= sell_back * issuer_price
-                user["purchased_stocks"][issuer] -= sell_back
-                save_users(users)
-                st.success(f"{issuer} に {sell_back} 株を売却しました！")
-    else:
-        st.info("売却可能な株がありません。")
+    st.subheader("📤 他人から買った株を売り返す（要承認）")
+    owned_from = user.get("owned_from", {})
+    for seller, count in owned_from.items():
+        if count > 0:
+            st.write(f"✅ {seller} から {count} 株保有")
+            sell_back_num = st.number_input(f"{seller} への売却株数", min_value=1, max_value=count, step=1, key=f"sellback_{seller}")
+            sell_back_price = st.number_input(f"{seller} に売り返す希望価格（1株あたり）", min_value=1, step=1, key=f"price_{seller}")
+            if st.button(f"{seller} に売り返し提案を送る", key=f"btn_{seller}"):
+                requests.append({
+                    "from": username,
+                    "to": seller,
+                    "amount": sell_back_num,
+                    "price": sell_back_price
+                })
+                save_requests(requests)
+                st.success(f"{seller} に売り返しの提案を送信しました")
 
-    st.subheader("📤 保有株を売却（エビに戻す）")
-    if user["stock"] > 0:
-        sell_amount = st.number_input("売却する株数", min_value=1, max_value=user["stock"], step=1, key="sell_stock")
-        if st.button("株を売却"):
-            gained_ebi = sell_amount * user["stock_price"]
-            user["stock"] -= sell_amount
-            user["ebi"] += gained_ebi
-            save_users(users)
-            st.success(f"{sell_amount} 株を売却し、{gained_ebi} エビを獲得しました！")
-    else:
-        st.info("保有株がありません")
+    st.subheader("💬 受け取った売り返し提案")
+    my_requests = [r for r in requests if r["to"] == username]
+    for req in my_requests:
+        st.info(f"{req['from']} から {req['amount']} 株を {req['price']} エビで買い戻して欲しいという提案")
+        if st.button("承諾", key=f"accept_{req['from']}"):
+            buyer = users[req["from"]]
+            total_cost = req["amount"] * req["price"]
+            if user["ebi"] >= total_cost:
+                user["ebi"] -= total_cost
+                user["stock"] += req["amount"]
+                buyer["ebi"] += total_cost
+                buyer["stock"] -= req["amount"]
+                buyer["owned_from"][username] -= req["amount"]
+                requests.remove(req)
+                save_users(users)
+                save_requests(requests)
+                st.success("売り返しを承諾しました")
+            else:
+                st.error("エビが足りません（あなた）")
+        if st.button("拒否", key=f"reject_{req['from']}"):
+            requests.remove(req)
+            save_requests(requests)
+            st.info("売り返しを拒否しました")
 
     st.subheader("説明コメントの更新")
     comment = st.text_area("説明", value=user["comment"])
@@ -156,6 +176,7 @@ def home():
 
     if username == "admin":
         st.subheader("👮 管理者パネル")
+
         ban_user = st.selectbox("BANするユーザー", [u for u in users if u != "admin"])
         if st.button("BAN実行"):
             users[ban_user]["banned"] = True
@@ -190,8 +211,6 @@ if "username" not in st.session_state:
     login()
 else:
     home()
-
-
 
 
 
