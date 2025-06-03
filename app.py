@@ -108,22 +108,41 @@ def home():
     else:
         st.info("現在、購入可能な株がありません。")
 
-    st.subheader("📤 他人から買った株を売り返す（要承認）")
+        st.subheader("🤝 他社株の売却（売り返し）")
     owned_from = user.get("owned_from", {})
-    for seller, count in owned_from.items():
-        if count > 0:
-            st.write(f"✅ {seller} から {count} 株保有")
-            sell_back_num = st.number_input(f"{seller} への売却株数", min_value=1, max_value=count, step=1, key=f"sellback_{seller}")
-            sell_back_price = st.number_input(f"{seller} に売り返す希望価格（1株あたり）", min_value=1, step=1, key=f"price_{seller}")
-            if st.button(f"{seller} に売り返し提案を送る", key=f"btn_{seller}"):
-                requests.append({
+    others = [u for u in users if u != username and not users[u].get("banned")]
+
+    if not others:
+        st.info("売却可能な相手がいません")
+    else:
+        for seller in others:
+            owned_amount = owned_from.get(seller, 0)
+            st.markdown(f"#### {seller} への売却提案")
+            st.write(f"保有株数（{seller} から購入）: {owned_amount} 株")
+            
+            sell_back_count = st.number_input(
+                f"{seller} への売却株数", min_value=0, max_value=owned_amount,
+                step=1, key=f"sell_back_count_{seller}"
+            )
+            propose_price = st.number_input(
+                f"1株あたりの提案価格（エビ）", min_value=1,
+                key=f"sell_back_price_{seller}"
+            )
+
+            if sell_back_count == 0:
+                st.warning("売却株数が 0 のため、売却できません")
+                st.button("売却提案（無効）", disabled=True, key=f"disabled_button_{seller}")
+            elif st.button(f"{seller} に売却提案", key=f"sell_propose_button_{seller}"):
+                if "sell_backs" not in users[seller]:
+                    users[seller]["sell_backs"] = []
+                users[seller]["sell_backs"].append({
                     "from": username,
-                    "to": seller,
-                    "amount": sell_back_num,
-                    "price": sell_back_price
+                    "amount": sell_back_count,
+                    "price_per_stock": propose_price
                 })
-                save_requests(requests)
-                st.success(f"{seller} に売り返しの提案を送信しました")
+                save_users(users)
+                st.success(f"{seller} に {sell_back_count} 株（@{propose_price}）の売却提案を送りました！")
+=f"
 
     st.subheader("💬 受け取った売り返し提案")
     my_requests = [r for r in requests if r["to"] == username]
