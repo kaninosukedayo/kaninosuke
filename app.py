@@ -43,7 +43,7 @@ def login():
                 "comment": "",
                 "banned": False,
                 "stock_price": DEFAULT_STOCK_PRICE,
-                "stock_detail": {}
+                "purchased_stocks": {}
             }
             save_users(users)
             st.success("登録完了！ログインしてください")
@@ -57,6 +57,9 @@ def home():
         st.error("あなたのアカウントは凍結されています。")
         return
 
+    if "purchased_stocks" not in user:
+        user["purchased_stocks"] = {}
+
     st.write(f"### ようこそ、{username}さん")
     st.metric("🦐 エビ", user["ebi"])
     st.metric("📈 保有株数", user["stock"])
@@ -64,7 +67,7 @@ def home():
     st.metric("🧺 売りに出している株数", user.get("listed_stock", 0))
 
     st.subheader("🛒 売りに出す株数の設定")
-    new_listed = st.number_input("売りに出す株数（市場に出す量）", min_value=0, step=1, value=user.get("listed_stock", 0))
+    new_listed = st.number_input("売りに出す株数（市場に出す量）", min_value=0, max_value=user["stock"], step=1, value=user.get("listed_stock", 0))
     if st.button("売り出し株数を更新"):
         user["listed_stock"] = new_listed
         save_users(users)
@@ -85,19 +88,34 @@ def home():
             if user["ebi"] >= total_cost:
                 user["ebi"] -= total_cost
                 user["stock"] += buy_amount
+                user["purchased_stocks"][target_user] = user["purchased_stocks"].get(target_user, 0) + buy_amount
                 target_data["ebi"] += total_cost
                 target_data["listed_stock"] -= buy_amount
-
-                # 株の所有者を記録
-                user.setdefault("stock_detail", {})
-                user["stock_detail"][target_user] = user["stock_detail"].get(target_user, 0) + buy_amount
-
                 save_users(users)
                 st.success(f"{target_user} の株を {buy_amount} 株購入しました！")
             else:
                 st.error("エビが足りません")
     else:
         st.info("現在、購入可能な株がありません。")
+
+    st.subheader("♻️ 株を元の発行者に売り返す")
+    if user["purchased_stocks"]:
+        for issuer, amount in user["purchased_stocks"].items():
+            if amount <= 0:
+                continue
+            issuer_price = users[issuer]["stock_price"]
+            st.write(f"{issuer} に売り返せる株: {amount} 株 ｜現在株価: {issuer_price}")
+            sell_back = st.number_input(f"{issuer} に売る株数", min_value=0, max_value=amount, step=1, key=f"sellback_{issuer}")
+            if st.button(f"{issuer} に売却する", key=f"btn_sellback_{issuer}"):
+                user["stock"] -= sell_back
+                user["ebi"] += sell_back * issuer_price
+                users[issuer]["stock"] -= 0  # 発行者の保有株数は増やさない（必要なら調整）
+                users[issuer]["ebi"] -= sell_back * issuer_price
+                user["purchased_stocks"][issuer] -= sell_back
+                save_users(users)
+                st.success(f"{issuer} に {sell_back} 株を売却しました！")
+    else:
+        st.info("売却可能な株がありません。")
 
     st.subheader("📤 保有株を売却（エビに戻す）")
     if user["stock"] > 0:
@@ -110,33 +128,6 @@ def home():
             st.success(f"{sell_amount} 株を売却し、{gained_ebi} エビを獲得しました！")
     else:
         st.info("保有株がありません")
-
-    st.subheader("♻️ 株を元の発行者に売り返す")
-    if user.get("stock_detail"):
-        sell_back_target = st.selectbox("誰に売り返しますか？", list(user["stock_detail"].keys()))
-        max_sellable = user["stock_detail"][sell_back_target]
-        sell_back_amount = st.number_input("売り返す株数", min_value=1, max_value=max_sellable, step=1, key="sell_back_amount")
-
-        if st.button("売り返す"):
-            issuer = users[sell_back_target]
-            sell_price = issuer["stock_price"]
-            total_return = sell_back_amount * sell_price
-
-            user["stock"] -= sell_back_amount
-            user["stock_detail"][sell_back_target] -= sell_back_amount
-            if user["stock_detail"][sell_back_target] == 0:
-                del user["stock_detail"][sell_back_target]
-
-            user["ebi"] += total_return
-            issuer["stock"] += sell_back_amount
-            issuer["ebi"] -= total_return
-            if issuer["ebi"] < 0:
-                issuer["ebi"] = 0
-
-            save_users(users)
-            st.success(f"{sell_back_target} に {sell_back_amount} 株を売り返し、{total_return} エビを獲得しました！")
-    else:
-        st.info("売り返せる株がありません。")
 
     st.subheader("説明コメントの更新")
     comment = st.text_area("説明", value=user["comment"])
@@ -165,7 +156,6 @@ def home():
 
     if username == "admin":
         st.subheader("👮 管理者パネル")
-
         ban_user = st.selectbox("BANするユーザー", [u for u in users if u != "admin"])
         if st.button("BAN実行"):
             users[ban_user]["banned"] = True
@@ -200,7 +190,6 @@ if "username" not in st.session_state:
     login()
 else:
     home()
-
 
 
 
