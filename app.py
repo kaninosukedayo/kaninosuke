@@ -5,7 +5,6 @@ import os
 USER_FILE = "users.json"
 DEFAULT_STOCK_PRICE = 120
 
-# ユーザーデータの読み込みと保存
 def load_users():
     if not os.path.exists(USER_FILE):
         with open(USER_FILE, "w") as f:
@@ -19,7 +18,6 @@ def save_users(users):
 
 users = load_users()
 
-# ログイン画面
 def login():
     st.title("投資ゲーム ログイン")
     username = st.text_input("ユーザー名")
@@ -44,13 +42,11 @@ def login():
                 "listed_stock": 0,
                 "comment": "",
                 "banned": False,
-                "stock_price": DEFAULT_STOCK_PRICE,
-                "proposals": {}
+                "stock_price": DEFAULT_STOCK_PRICE
             }
             save_users(users)
             st.success("登録完了！ログインしてください")
 
-# ホーム画面
 def home():
     st.title("🦐 投資ゲーム ホーム")
     username = st.session_state["username"]
@@ -97,17 +93,65 @@ def home():
     else:
         st.info("現在、購入可能な株がありません。")
 
-    st.subheader("📤 保有株を売却（エビに戻す）")
+    st.subheader("📤 保有株を売却（自社株をエビに戻す）")
     if user["stock"] > 0:
         sell_amount = st.number_input("売却する株数", min_value=1, max_value=user["stock"], step=1, key="sell_stock")
         if st.button("株を売却"):
             gained_ebi = sell_amount * user["stock_price"]
             user["stock"] -= sell_amount
             user["ebi"] += gained_ebi
+            user["listed_stock"] += sell_amount
             save_users(users)
             st.success(f"{sell_amount} 株を売却し、{gained_ebi} エビを獲得しました！")
     else:
         st.info("保有株がありません")
+
+    st.subheader("🔁 他社株を売却（売却提案）")
+    if user["stock"] > 0:
+        candidate_users = [u for u in users if u != username and not users[u]["banned"]]
+        sell_to = st.selectbox("売却先ユーザー", candidate_users)
+        sell_amount = st.number_input("売却株数", min_value=1, max_value=user["stock"], step=1, key="resell_amount")
+        sell_price = st.number_input("1株あたりの価格（交渉制）", min_value=1, step=1, key="resell_price")
+
+        if st.button("売却提案を送る"):
+            proposal = {
+                "buyer": sell_to,
+                "amount": sell_amount,
+                "price": sell_price,
+                "from": username
+            }
+            users[sell_to]["sale_proposal"] = proposal
+            save_users(users)
+            st.success(f"{sell_to} に {sell_amount} 株（単価 {sell_price} エビ）の売却提案を送りました")
+
+    proposal = user.get("sale_proposal")
+    if proposal:
+        st.subheader("📩 売却提案を受け取りました")
+        st.write(f"売却元: {proposal['from']}")
+        st.write(f"売却株数: {proposal['amount']}")
+        st.write(f"価格: {proposal['price']} エビ/株（合計 {proposal['amount'] * proposal['price']} エビ）")
+
+        if st.button("売却提案を承諾する"):
+            seller = proposal["from"]
+            amount = proposal["amount"]
+            price = proposal["price"]
+            total = amount * price
+            if user["ebi"] >= total and users[seller]["stock"] >= amount:
+                user["ebi"] -= total
+                user["stock"] += amount
+                users[seller]["ebi"] += total
+                users[seller]["stock"] -= amount
+                users[seller]["listed_stock"] += amount
+                del user["sale_proposal"]
+                save_users(users)
+                st.success(f"{seller} から {amount} 株を購入しました")
+            else:
+                st.error("エビまたは株が不足しています")
+
+        if st.button("売却提案を拒否"):
+            del user["sale_proposal"]
+            save_users(users)
+            st.info("提案を拒否しました")
 
     st.subheader("説明コメントの更新")
     comment = st.text_area("説明", value=user["comment"])
